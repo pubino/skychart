@@ -1,12 +1,7 @@
-name: Build SkyChart macOS ARM64 (Self-Hosted)
+name: Build SkyChart macOS ARM64 (Cloud - Manual)
 
-# Automatic builds on self-hosted ARM64 runner (fast, no queue)
+# Manual-only cloud builds to avoid long queues
 on:
-  push:
-    branches: [ main, master, macos-arm64 ]
-  pull_request:
-    branches: [ main, master ]
-  # Allow manual triggering
   workflow_dispatch:
     inputs:
       create_release:
@@ -22,12 +17,12 @@ permissions:
   checks: write
 
 jobs:
-  # Primary build job: Self-hosted ARM64 runner (fast, no queue)
-  build-self-hosted:
-    name: Build on Self-hosted macOS ARM64 (Primary)
-    # Use our configured self-hosted runner - no queue delays
-    runs-on: [self-hosted, macOS, ARM64]
-    timeout-minutes: 45
+  # Cloud build job - manual trigger only
+  build-cloud:
+    name: Build on GitHub-hosted macOS ARM64 (Manual)
+    # Use the new ARM64 macOS runners (when available)
+    runs-on: macos-15-arm64
+    timeout-minutes: 90  # Longer timeout for cloud builds
     
     steps:
     - name: Checkout repository
@@ -37,19 +32,19 @@ jobs:
     
     - name: Setup environment info
       run: |
-        echo "🏠 Running on Self-hosted ARM64 runner (no queue delays!)"
+        echo "🌩️ Running on GitHub-hosted ARM64 runner"
         echo "Runner OS: $(uname -a)"
         echo "CPU Architecture: $(uname -m)"
         echo "Available disk space:"
         df -h
         echo "Memory info:"
         system_profiler SPHardwareDataType | grep Memory
-        echo "🚀 Using pre-configured environment with FPC, Qt5, and Lazarus"
     
     - name: Install Homebrew dependencies
       run: |
+        echo "📦 Installing dependencies via Homebrew..."
         # Install Qt5 and Free Pascal Compiler
-        brew install qt@5 fpc lazarus-ide
+        brew install qt@5 fpc
         
         # Verify installations
         echo "Qt5 version:"
@@ -61,8 +56,9 @@ jobs:
     
     - name: Setup Qt5 environment
       run: |
+        echo "⚙️ Setting up Qt5 environment..."
         echo "Qt5 installation:"
-        ls -la /usr/local/Cellar/qt@5/ || ls -la /opt/homebrew/Cellar/qt@5/ || true
+        ls -la /opt/homebrew/Cellar/qt@5/ || ls -la /usr/local/Cellar/qt@5/ || true
         
         # Set environment variables for Qt5
         if [ -d "/opt/homebrew/Cellar/qt@5" ]; then
@@ -75,6 +71,35 @@ jobs:
           echo "/usr/local/Cellar/qt@5/*/bin" >> $GITHUB_PATH
         fi
     
+    - name: Clone and build Lazarus with Qt5
+      run: |
+        echo "🏗️ Building Lazarus with Qt5 support..."
+        # Clone Lazarus if not exists
+        if [ ! -d "lazarus" ]; then
+          git clone https://gitlab.com/freepascal.org/lazarus/lazarus.git
+          cd lazarus
+          git checkout lazarus_3_4  # Stable branch
+        else
+          cd lazarus
+        fi
+        
+        # Build Lazarus with Qt5
+        make clean LCL_PLATFORM=qt5
+        make bigide LCL_PLATFORM=qt5
+    
+    - name: Build Qt5Pas framework
+      run: |
+        echo "🔧 Building Qt5Pas framework..."
+        if [ ! -d "Qt5Pas" ]; then
+          git clone https://github.com/davidbannon/Qt5Pas.git
+        fi
+        cd Qt5Pas
+        qmake
+        make
+        
+        # Install Qt5Pas
+        sudo make install
+    
     - name: Make build scripts executable
       run: |
         chmod +x build_dependencies.sh
@@ -84,37 +109,37 @@ jobs:
     
     - name: Build dependencies
       run: |
-        echo "Building dependencies..."
-        ./build_dependencies.sh 2>&1 | tee build_dependencies.log
+        echo "📦 Building dependencies..."
+        ./build_dependencies.sh 2>&1 | tee build_dependencies_cloud.log
         
         # Check if build was successful
         if [ $? -ne 0 ]; then
-          echo "Dependencies build failed"
-          cat build_dependencies.log
+          echo "❌ Dependencies build failed"
+          cat build_dependencies_cloud.log
           exit 1
         fi
     
     - name: Build SkyChart
       run: |
-        echo "Building SkyChart..."
-        ./build_macos_arm64.sh 2>&1 | tee build_skychart.log
+        echo "🚀 Building SkyChart on cloud ARM64..."
+        ./build_macos_arm64.sh 2>&1 | tee build_skychart_cloud.log
         
         # Check if build was successful
         if [ $? -ne 0 ]; then
-          echo "SkyChart build failed"
-          cat build_skychart.log
+          echo "❌ SkyChart build failed"
+          cat build_skychart_cloud.log
           exit 1
         fi
     
     - name: Test build
       run: |
-        echo "Testing build..."
-        ./test_build.sh 2>&1 | tee test_build.log
+        echo "🧪 Testing build..."
+        ./test_build.sh 2>&1 | tee test_build_cloud.log
     
     - name: Create distribution package
       run: |
-        echo "Creating distribution package..."
-        ./package_macos.sh 2>&1 | tee package.log
+        echo "📦 Creating distribution package..."
+        ./package_macos.sh 2>&1 | tee package_cloud.log
         
         # List created artifacts
         echo "Created artifacts:"
@@ -125,36 +150,36 @@ jobs:
       uses: actions/upload-artifact@v4
       if: always()  # Upload even if tests failed
       with:
-        name: skychart-macos-arm64-build-${{ github.run_number }}
+        name: skychart-cloud-arm64-build-${{ github.run_number }}
         path: |
           skychart/units/aarch64-darwin-qt5/skychart
           skychart/units/aarch64-darwin-qt5/cdcicon
           skychart/library/wcs/libcdcwcs.dylib
           dist/
-          *.log
+          *_cloud.log
         retention-days: 30
     
     - name: Upload DMG distribution
       uses: actions/upload-artifact@v4
       if: success()
       with:
-        name: skychart-macos-arm64-dmg-${{ github.run_number }}
+        name: skychart-cloud-arm64-dmg-${{ github.run_number }}
         path: |
           dist/*.dmg
         retention-days: 90
 
-  # Release job: Create release if requested or on main branch
+  # Release job (if requested)
   release:
-    name: Create Release (Self-hosted Build)
-    needs: [build-self-hosted]
+    name: Create Release (Cloud Build)
+    needs: [build-cloud]
     runs-on: ubuntu-latest
-    if: ${{ success() && (github.event.inputs.create_release == 'true' || (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')) }}
+    if: ${{ success() && github.event.inputs.create_release == 'true' }}
     
     steps:
     - name: Download artifacts
       uses: actions/download-artifact@v4
       with:
-        name: skychart-macos-arm64-dmg-${{ github.run_number }}
+        name: skychart-cloud-arm64-dmg-${{ github.run_number }}
         path: ./release/
     
     - name: Create Release
@@ -163,13 +188,13 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        tag_name: v${{ github.run_number }}-arm64
-        release_name: SkyChart macOS ARM64 Build ${{ github.run_number }}
+        tag_name: v${{ github.run_number }}-cloud-arm64
+        release_name: SkyChart Cloud ARM64 Build ${{ github.run_number }}
         body: |
-          **Automated macOS ARM64 Build**
+          **Manual Cloud ARM64 Build**
           
-          - Built with Free Pascal Compiler (ARM64 native)
-          - Qt5 widget set for Apple Silicon compatibility  
+          - Built on GitHub-hosted `macos-15-arm64` runner
+          - Native ARM64 compilation with Qt5 widget set
           - Professional app bundle and DMG distribution
           - Build number: ${{ github.run_number }}
           - Commit: ${{ github.sha }}
@@ -182,7 +207,7 @@ jobs:
           
           **System Requirements:**
           - macOS 11.0+ (Big Sur or later)
-          - Apple Silicon (M1/M2/M3) or Intel with Rosetta 2
+          - Apple Silicon (M1/M2/M3/M4) or Intel with Rosetta 2
         draft: false
         prerelease: true
     
@@ -193,5 +218,5 @@ jobs:
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
         asset_path: ./release/SkyChart-macOS-ARM64.dmg
-        asset_name: SkyChart-macOS-ARM64-${{ github.run_number }}.dmg
+        asset_name: SkyChart-Cloud-ARM64-${{ github.run_number }}.dmg
         asset_content_type: application/octet-stream
