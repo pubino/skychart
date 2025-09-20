@@ -118,6 +118,18 @@ build_*.log
 # Build system logs and temporary files
 *.build
 test_*.log
+
+# GitHub Actions artifacts and runner
+github-runner/
+_work/
+*.log
+.runner
+.credentials
+.credentials_rsaparams
+
+# CI/CD temporary files
+actions-runner-*/
+runner_*.log
 package_*.log
 
 # Free Pascal Compiler artifacts

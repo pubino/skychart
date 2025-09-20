@@ -1,0 +1,247 @@
+name: Build SkyChart macOS ARM64
+
+# Trigger on pushes to main branches and pull requests
+on:
+  push:
+    branches: [ main, master, macos-arm64 ]
+  pull_request:
+    branches: [ main, master ]
+  # Allow manual triggering
+  workflow_dispatch:
+
+# Set permissions for GITHUB_TOKEN
+permissions:
+  contents: read
+  actions: read
+  checks: write
+
+jobs:
+  # First job: Build with cloud runners (limited but available)
+  build-cloud:
+    name: Build on GitHub-hosted macOS ARM64
+    # Use the new ARM64 macOS runners (in preview/limited availability)
+    runs-on: macos-15-arm64
+    timeout-minutes: 60
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+    
+    - name: Setup environment info
+      run: |
+        echo "Runner OS: $(uname -a)"
+        echo "CPU Architecture: $(uname -m)"
+        echo "Available disk space:"
+        df -h
+        echo "Memory info:"
+        system_profiler SPHardwareDataType | grep Memory
+    
+    - name: Install Homebrew dependencies
+      run: |
+        # Install Qt5 and Free Pascal Compiler
+        brew install qt@5 fpc lazarus-ide
+        
+        # Verify installations
+        echo "Qt5 version:"
+        brew list --versions qt@5
+        echo "FPC version:"
+        fpc -iV
+        echo "FPC target:"
+        fpc -iTP
+    
+    - name: Setup Qt5 environment
+      run: |
+        echo "Qt5 installation:"
+        ls -la /usr/local/Cellar/qt@5/ || ls -la /opt/homebrew/Cellar/qt@5/ || true
+        
+        # Set environment variables for Qt5
+        if [ -d "/opt/homebrew/Cellar/qt@5" ]; then
+          echo "QT5_DIR=/opt/homebrew/Cellar/qt@5" >> $GITHUB_ENV
+          echo "DYLD_FRAMEWORK_PATH=/opt/homebrew/Cellar/qt@5/*/lib:$DYLD_FRAMEWORK_PATH" >> $GITHUB_ENV
+          echo "/opt/homebrew/Cellar/qt@5/*/bin" >> $GITHUB_PATH
+        elif [ -d "/usr/local/Cellar/qt@5" ]; then
+          echo "QT5_DIR=/usr/local/Cellar/qt@5" >> $GITHUB_ENV
+          echo "DYLD_FRAMEWORK_PATH=/usr/local/Cellar/qt@5/*/lib:$DYLD_FRAMEWORK_PATH" >> $GITHUB_ENV
+          echo "/usr/local/Cellar/qt@5/*/bin" >> $GITHUB_PATH
+        fi
+    
+    - name: Make build scripts executable
+      run: |
+        chmod +x build_dependencies.sh
+        chmod +x build_macos_arm64.sh
+        chmod +x test_build.sh
+        chmod +x package_macos.sh
+    
+    - name: Build dependencies
+      run: |
+        echo "Building dependencies..."
+        ./build_dependencies.sh 2>&1 | tee build_dependencies.log
+        
+        # Check if build was successful
+        if [ $? -ne 0 ]; then
+          echo "Dependencies build failed"
+          cat build_dependencies.log
+          exit 1
+        fi
+    
+    - name: Build SkyChart
+      run: |
+        echo "Building SkyChart..."
+        ./build_macos_arm64.sh 2>&1 | tee build_skychart.log
+        
+        # Check if build was successful
+        if [ $? -ne 0 ]; then
+          echo "SkyChart build failed"
+          cat build_skychart.log
+          exit 1
+        fi
+    
+    - name: Test build
+      run: |
+        echo "Testing build..."
+        ./test_build.sh 2>&1 | tee test_build.log
+    
+    - name: Create distribution package
+      run: |
+        echo "Creating distribution package..."
+        ./package_macos.sh 2>&1 | tee package.log
+        
+        # List created artifacts
+        echo "Created artifacts:"
+        ls -la dist/ || true
+        du -sh dist/* || true
+    
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      if: always()  # Upload even if tests failed
+      with:
+        name: skychart-macos-arm64-build-${{ github.run_number }}
+        path: |
+          skychart/units/aarch64-darwin-qt5/skychart
+          skychart/units/aarch64-darwin-qt5/cdcicon
+          skychart/library/wcs/libcdcwcs.dylib
+          dist/
+          *.log
+        retention-days: 30
+    
+    - name: Upload DMG distribution
+      uses: actions/upload-artifact@v4
+      if: success()
+      with:
+        name: skychart-macos-arm64-dmg-${{ github.run_number }}
+        path: |
+          dist/*.dmg
+        retention-days: 90
+
+  # Second job: Build with self-hosted runners (recommended approach)
+  build-self-hosted:
+    name: Build on Self-hosted macOS ARM64
+    # Use self-hosted runners with the 'macos-arm64' label
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 45
+    # Only run if cloud build is not available or fails
+    if: ${{ failure() || contains(github.event.head_commit.message, '[self-hosted]') }}
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+    
+    - name: Clean workspace
+      run: |
+        # Clean previous builds
+        rm -rf skychart/units/aarch64-darwin-qt5/ || true
+        rm -rf dist/ || true
+        make clean || true
+    
+    - name: Verify environment
+      run: |
+        echo "System info:"
+        uname -a
+        echo "FPC version:"
+        fpc -iV
+        echo "Qt5 installation:"
+        brew list qt@5 || echo "Qt5 not found via Homebrew"
+    
+    - name: Setup environment
+      run: |
+        # Source our standard environment
+        export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+        
+        # Verify required tools
+        which fpc || (echo "FPC not found" && exit 1)
+        which lazbuild || (echo "Lazarus not found" && exit 1)
+    
+    - name: Build with existing automation
+      run: |
+        # Use our proven build system
+        ./build_dependencies.sh
+        ./build_macos_arm64.sh
+        ./test_build.sh
+        ./package_macos.sh
+    
+    - name: Upload self-hosted artifacts
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: skychart-self-hosted-arm64-${{ github.run_number }}
+        path: |
+          dist/
+          *.log
+        retention-days: 30
+
+  # Third job: Release management (if on main branch)
+  release:
+    name: Create Release
+    needs: [build-cloud]  # or build-self-hosted if cloud fails
+    runs-on: ubuntu-latest
+    if: ${{ success() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') }}
+    
+    steps:
+    - name: Download artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: skychart-macos-arm64-dmg-${{ github.run_number }}
+        path: ./release/
+    
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ github.run_number }}-arm64
+        release_name: SkyChart macOS ARM64 Build ${{ github.run_number }}
+        body: |
+          **Automated macOS ARM64 Build**
+          
+          - Built with Free Pascal Compiler (ARM64 native)
+          - Qt5 widget set for Apple Silicon compatibility  
+          - Professional app bundle and DMG distribution
+          - Build number: ${{ github.run_number }}
+          - Commit: ${{ github.sha }}
+          
+          **Installation:**
+          1. Download SkyChart-*.dmg
+          2. Mount the DMG file
+          3. Drag SkyChart.app to Applications folder
+          4. Launch from Applications or Launchpad
+          
+          **System Requirements:**
+          - macOS 11.0+ (Big Sur or later)
+          - Apple Silicon (M1/M2/M3) or Intel with Rosetta 2
+        draft: false
+        prerelease: true
+    
+    - name: Upload Release Assets
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./release/SkyChart-macOS-ARM64.dmg
+        asset_name: SkyChart-macOS-ARM64-${{ github.run_number }}.dmg
+        asset_content_type: application/octet-stream

@@ -46,7 +46,7 @@ This software is part of a full suite for astronomical observation:
 
 ## macOS ARM64 (Apple Silicon) Build System
 
-This repository includes a complete build and distribution system for SkyChart on macOS ARM64 (Apple Silicon).
+This repository includes a complete build and distribution system for SkyChart on macOS ARM64 (Apple Silicon) with **automated CI/CD pipeline support via GitHub Actions**.
 
 ### Quick Start
 
@@ -138,6 +138,38 @@ qmake --version
 - All dependencies embedded
 - Complete astronomical data (193MB)
 - DMG distribution package (61MB)
+
+## Automated CI/CD Pipeline
+
+### GitHub Actions Integration
+
+This repository includes a complete **GitHub Actions CI/CD pipeline** for automated ARM64 builds:
+
+**Pipeline Features:**
+- ✅ **Native ARM64 cloud runners** (when available)
+- ✅ **Self-hosted runner support** (your Mac)
+- ✅ **Automated dependency installation**
+- ✅ **Complete build automation** 
+- ✅ **Professional DMG distribution**
+- ✅ **Artifact management and releases**
+
+**Setup Self-Hosted Runner:**
+```bash
+# Automated setup script
+./setup_github_runner.sh
+```
+
+**Workflow Triggers:**
+- Push to `main`, `master`, or `macos-arm64` branches
+- Pull requests to main branches  
+- Manual workflow dispatch
+
+**Build Matrix:**
+- **Primary**: GitHub-hosted `macos-15-arm64` runners
+- **Fallback**: Self-hosted ARM64 Mac runners
+- **Output**: Professional DMG packages with automatic releases
+
+For detailed CI/CD setup and analysis, see: [`GITHUB_ACTIONS_ANALYSIS.md`](GITHUB_ACTIONS_ANALYSIS.md)
 
 ## Advanced Usage
 
