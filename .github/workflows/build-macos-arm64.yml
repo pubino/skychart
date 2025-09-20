@@ -135,57 +135,6 @@ jobs:
           dist/*.dmg
         retention-days: 90
 
-
-    
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 1
-    
-    - name: Clean workspace
-      run: |
-        # Clean previous builds
-        rm -rf skychart/units/aarch64-darwin-qt5/ || true
-        rm -rf dist/ || true
-        make clean || true
-    
-    - name: Verify environment
-      run: |
-        echo "System info:"
-        uname -a
-        echo "FPC version:"
-        fpc -iV
-        echo "Qt5 installation:"
-        brew list qt@5 || echo "Qt5 not found via Homebrew"
-    
-    - name: Setup environment
-      run: |
-        # Source our standard environment
-        export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
-        
-        # Verify required tools
-        which fpc || (echo "FPC not found" && exit 1)
-        which lazbuild || (echo "Lazarus not found" && exit 1)
-    
-    - name: Build with existing automation
-      run: |
-        # Use our proven build system
-        ./build_dependencies.sh
-        ./build_macos_arm64.sh
-        ./test_build.sh
-        ./package_macos.sh
-    
-    - name: Upload self-hosted artifacts
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: skychart-self-hosted-arm64-${{ github.run_number }}
-        path: |
-          dist/
-          *.log
-        retention-days: 30
-
   # Third job: Release management (if on main branch)
   release:
     name: Create Release
