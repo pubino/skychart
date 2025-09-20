@@ -46,10 +46,39 @@ jobs:
         system_profiler SPHardwareDataType | grep Memory
         echo "🚀 Using pre-configured environment with FPC, Qt5, and Lazarus"
     
-    - name: Install Homebrew dependencies
+    - name: Verify existing environment
       run: |
-        # Install Qt5 and Free Pascal Compiler
-        brew install qt@5 fpc lazarus-ide
+        echo "🔍 Checking existing environment..."
+        echo "Current PATH: $PATH"
+        
+        # Check FPC
+        if command -v fpc >/dev/null 2>&1; then
+          echo "✅ FPC found: $(fpc -iV)"
+        else
+          echo "❌ FPC not found"
+          exit 1
+        fi
+        
+        # Check Qt5
+        if brew list qt@5 >/dev/null 2>&1; then
+          echo "✅ Qt5 found: $(brew list --versions qt@5)"
+        else
+          echo "❌ Qt5 not found"
+          exit 1
+        fi
+        
+        # Check Lazarus
+        if command -v lazbuild >/dev/null 2>&1; then
+          echo "✅ Lazarus found: $(lazbuild --version)"
+        else
+          echo "❌ Lazarus not found"
+          exit 1
+        fi
+    
+    - name: Setup build environment
+      run: |
+        # Environment is already set up on self-hosted runner
+        echo "✅ Environment ready for build"
         
         # Verify installations
         echo "Qt5 version:"
