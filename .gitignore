@@ -93,3 +93,71 @@ bin-*.tar.bz2
 bin-*.tar.xz
 bin-*.zip
 update-bin-*.zip
+
+# macOS ARM64 build artifacts
+dist/
+*.app/
+*.dmg
+build_*.log
+
+# Lazarus IDE cache and temp files  
+~/Downloads/lazarus/
+*.compiled
+*.bak
+*.tmp
+
+# macOS specific files
+.DS_Store
+*.dSYM/
+.AppleDouble
+.LSOverride
+
+# Homebrew and local installations
+/Users/*/homebrew/
+
+# Build system logs and temporary files
+*.build
+test_*.log
+package_*.log
+
+# Free Pascal Compiler artifacts
+fpc.cfg
+symbol_order.fpc
+link*.res
+linkfiles*.res
+*.compiled
+
+# Our custom build scripts (keep in repo but listed for reference)
+# build_macos_arm64.sh
+# package_macos.sh  
+# test_build.sh
+# launch_skychart.sh
+# build_dependencies.sh
+
+# Symlinks and circular references
+data
+data/data
+tools/data/data
+
+# Package metadata
+packagefiles.xml
+
+# IDE and editor files
+*.lps
+.vscode/
+.idea/
+*~
+*.swp
+*.swo
+
+# Qt cache files  
+moc_*.cpp
+ui_*.h
+qrc_*.cpp
+
+# Testing and debugging
+debug/
+release/
+*.log
+core
+core.*
