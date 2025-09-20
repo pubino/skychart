@@ -16,12 +16,12 @@ permissions:
   checks: write
 
 jobs:
-  # First job: Build with cloud runners (limited but available)
-  build-cloud:
-    name: Build on GitHub-hosted macOS ARM64
-    # Use the new ARM64 macOS runners (in preview/limited availability)
-    runs-on: macos-15-arm64
-    timeout-minutes: 60
+  # First job: Build with self-hosted ARM64 runner
+  build-self-hosted:
+    name: Build on Self-hosted macOS ARM64
+    # Use our configured self-hosted runner
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 45
     
     steps:
     - name: Checkout repository
@@ -135,14 +135,7 @@ jobs:
           dist/*.dmg
         retention-days: 90
 
-  # Second job: Build with self-hosted runners (recommended approach)
-  build-self-hosted:
-    name: Build on Self-hosted macOS ARM64
-    # Use self-hosted runners with the 'macos-arm64' label
-    runs-on: [self-hosted, macOS, ARM64]
-    timeout-minutes: 45
-    # Only run if cloud build is not available or fails
-    if: ${{ failure() || contains(github.event.head_commit.message, '[self-hosted]') }}
+
     
     steps:
     - name: Checkout repository
@@ -196,7 +189,7 @@ jobs:
   # Third job: Release management (if on main branch)
   release:
     name: Create Release
-    needs: [build-cloud]  # or build-self-hosted if cloud fails
+    needs: [build-self-hosted]
     runs-on: ubuntu-latest
     if: ${{ success() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') }}
     
