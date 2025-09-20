@@ -210,9 +210,10 @@ jobs:
           echo "📚 See MACOS_SIGNING_SETUP.md for detailed setup instructions"
         fi
     
-    - name: Upload build artifacts
+    - name: Upload build artifacts (with fallback)
       uses: actions/upload-artifact@v4
       if: always()
+      continue-on-error: true
       with:
         name: skychart-macos-arm64-build-${{ github.run_number }}
         path: |
@@ -223,11 +224,51 @@ jobs:
           *.log
         retention-days: 30
     
-    - name: Upload signed DMG (if created)
+    - name: Upload signed DMG (with fallback)
       uses: actions/upload-artifact@v4
       if: success()
+      continue-on-error: true
       with:
         name: skychart-macos-arm64-signed-${{ github.run_number }}
         path: |
           *.dmg
         retention-days: 90
+    
+    - name: Local artifact storage (fallback)
+      if: failure()
+      run: |
+        echo "📦 GitHub artifact upload failed - storing locally..."
+        
+        # Create local artifact directory
+        ARTIFACT_DIR="/tmp/skychart-artifacts-${{ github.run_number }}"
+        mkdir -p "$ARTIFACT_DIR"
+        
+        # Copy all build artifacts
+        cp -r skychart/units "$ARTIFACT_DIR/" 2>/dev/null || true
+        cp -r skychart/library "$ARTIFACT_DIR/" 2>/dev/null || true
+        cp -r dist "$ARTIFACT_DIR/" 2>/dev/null || true
+        cp *.dmg "$ARTIFACT_DIR/" 2>/dev/null || true
+        cp *.log "$ARTIFACT_DIR/" 2>/dev/null || true
+        
+        # Create archive
+        ARCHIVE_NAME="skychart-macos-arm64-${{ github.run_number }}.tar.gz"
+        tar -czf "$ARCHIVE_NAME" -C "$ARTIFACT_DIR" .
+        
+        echo "📁 Local archive created: $ARCHIVE_NAME"
+        echo "📏 Archive size: $(du -sh "$ARCHIVE_NAME" | cut -f1)"
+        echo "📋 Archive contents:"
+        tar -tzf "$ARCHIVE_NAME" | head -20
+        
+        # Store archive in accessible location
+        ACCESSIBLE_DIR="$HOME/Desktop/skychart-builds"
+        mkdir -p "$ACCESSIBLE_DIR"
+        cp "$ARCHIVE_NAME" "$ACCESSIBLE_DIR/"
+        
+        echo "✅ Archive available at: $ACCESSIBLE_DIR/$ARCHIVE_NAME"
+        echo "🌐 To download from runner machine:"
+        echo "   scp user@runner-host:$ACCESSIBLE_DIR/$ARCHIVE_NAME ."
+    - name: Network diagnostics
+      run: |
+        echo "🔍 Running network diagnostics..."
+        chmod +x network_diagnostics.sh
+        ./network_diagnostics.sh
