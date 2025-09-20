@@ -144,7 +144,7 @@ jobs:
         ./test_build.sh 2>&1 | tee test_build.log || echo "⚠️ Tests completed with warnings"
         
         echo "Creating package..."
-        ./package_macos.sh 2>&1 | tee package.log || echo "⚠️ Package creation completed with warnings"
+        ./package_macos.sh all 2>&1 | tee package.log || echo "⚠️ Package creation completed with warnings"
         
         echo "✅ Build process completed"
         echo "Build artifacts:"

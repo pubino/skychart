@@ -139,7 +139,7 @@ jobs:
     - name: Create distribution package
       run: |
         echo "📦 Creating distribution package..."
-        ./package_macos.sh 2>&1 | tee package_cloud.log
+        ./package_macos.sh all 2>&1 | tee package_cloud.log
         
         # List created artifacts
         echo "Created artifacts:"

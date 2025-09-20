@@ -170,7 +170,7 @@ jobs:
         ./test_build.sh 2>&1 | tee test_build.log || true
         
         echo "Creating package..."
-        ./package_macos.sh 2>&1 | tee package.log || true
+        ./package_macos.sh all 2>&1 | tee package.log || true
         
         echo "Build artifacts:"
         find . -name "skychart" -type f 2>/dev/null || true
