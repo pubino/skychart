@@ -31,21 +31,125 @@ jobs:
         echo "CPU Architecture: $(uname -m)"
         echo "🚀 Installing build environment..."
     
-    - name: Install build dependencies
+    - name: Check and install build dependencies
       run: |
-        echo "🔧 Installing build dependencies..."
-        brew update || true
-        brew install fpc qt@5 || echo "Packages may already be installed"
-        echo "✅ FPC version: $(fpc -iV)"
-        echo "✅ Qt5 version: $(brew list --versions qt@5)"
+        echo "� Checking for existing build environment..."
+        
+        # Function to check if command exists
+        command_exists() {
+          command -v "$1" >/dev/null 2>&1
+        }
+        
+        # Check if Homebrew exists, install if not
+        if ! command_exists brew; then
+          echo "📦 Homebrew not found, installing..."
+          # Install Homebrew without sudo (installs to user directory if needed)
+          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || {
+            echo "❌ Failed to install Homebrew"
+            echo "Please ensure this runner has Homebrew installed or the necessary build tools"
+            exit 1
+          }
+          
+          # Add Homebrew to PATH for this session
+          if [[ -f "/opt/homebrew/bin/brew" ]]; then
+            echo "/opt/homebrew/bin" >> $GITHUB_PATH
+            export PATH="/opt/homebrew/bin:$PATH"
+          elif [[ -f "/usr/local/bin/brew" ]]; then
+            echo "/usr/local/bin" >> $GITHUB_PATH
+            export PATH="/usr/local/bin:$PATH"
+          fi
+        else
+          echo "✅ Homebrew found: $(brew --version | head -1)"
+        fi
+        
+        # Check and install FPC
+        if ! command_exists fpc; then
+          echo "📦 Installing Free Pascal Compiler..."
+          brew install fpc || {
+            echo "❌ Failed to install FPC via Homebrew"
+            echo "Please ensure FPC is available on this runner"
+            exit 1
+          }
+        else
+          echo "✅ FPC found: $(fpc -iV)"
+        fi
+        
+        # Check and install Qt5
+        if ! brew list qt@5 >/dev/null 2>&1; then
+          echo "📦 Installing Qt5..."
+          brew install qt@5 || {
+            echo "❌ Failed to install Qt5 via Homebrew"
+            echo "Please ensure Qt5 is available on this runner"
+            exit 1
+          }
+        else
+          echo "✅ Qt5 found: $(brew list --versions qt@5)"
+        fi
+        
+        echo "✅ All build dependencies verified"
+    
+    - name: Verify complete build environment
+      run: |
+        echo "🔍 Final environment verification..."
+        
+        # Check all required tools are available
+        MISSING_TOOLS=()
+        
+        if ! command -v fpc >/dev/null 2>&1; then
+          MISSING_TOOLS+=("fpc")
+        fi
+        
+        if ! command -v brew >/dev/null 2>&1; then
+          MISSING_TOOLS+=("brew")
+        elif ! brew list qt@5 >/dev/null 2>&1; then
+          MISSING_TOOLS+=("qt@5")
+        fi
+        
+        if [[ ${#MISSING_TOOLS[@]} -gt 0 ]]; then
+          echo "❌ Missing required build tools: ${MISSING_TOOLS[*]}"
+          echo ""
+          echo "To set up this self-hosted runner manually:"
+          echo "1. Install Homebrew: /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+          echo "2. Install FPC: brew install fpc"
+          echo "3. Install Qt5: brew install qt@5"
+          echo "4. Ensure runner user has permissions for these tools"
+          echo ""
+          exit 1
+        fi
+        
+        echo "✅ Build environment complete and ready"
+        echo "  FPC: $(fpc -iV) ($(fpc -iTP))"
+        echo "  Qt5: $(brew list --versions qt@5)"
+        echo "  Homebrew: $(brew --version | head -1)"
     
     - name: Setup Qt5 environment
       run: |
-        QT5_PREFIX=$(brew --prefix qt@5)
+        # Safely get Qt5 prefix with error handling
+        if command -v brew >/dev/null 2>&1; then
+          QT5_PREFIX=$(brew --prefix qt@5 2>/dev/null) || {
+            echo "❌ Failed to get Qt5 prefix from Homebrew"
+            exit 1
+          }
+        else
+          echo "❌ Homebrew not available for Qt5 prefix detection"
+          exit 1
+        fi
+        
+        # Verify Qt5 installation
+        if [[ ! -d "$QT5_PREFIX" ]]; then
+          echo "❌ Qt5 directory not found at: $QT5_PREFIX"
+          exit 1
+        fi
+        
+        # Set environment variables
         echo "QT5_DIR=$QT5_PREFIX" >> $GITHUB_ENV
         echo "DYLD_FRAMEWORK_PATH=$QT5_PREFIX/lib:$DYLD_FRAMEWORK_PATH" >> $GITHUB_ENV
         echo "$QT5_PREFIX/bin" >> $GITHUB_PATH
-        echo "✅ Qt5 environment configured: $QT5_PREFIX"
+        
+        echo "✅ Qt5 environment configured:"
+        echo "  QT5_DIR: $QT5_PREFIX"
+        echo "  Framework path: $QT5_PREFIX/lib"
+        echo "  Binaries: $QT5_PREFIX/bin"
     
     - name: Run build process
       run: |

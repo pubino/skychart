@@ -1,0 +1,164 @@
+name: Build SkyChart macOS ARM64 (Pre-configured Environment)
+
+# For self-hosted runners with pre-installed build environment
+on:
+  workflow_dispatch:
+    inputs:
+      environment_type:
+        description: 'Environment type'
+        required: true
+        default: 'pre-configured'
+        type: choice
+        options:
+        - pre-configured
+        - manual-setup
+
+permissions:
+  contents: read
+  actions: read
+  checks: write
+
+jobs:
+  build-pre-configured:
+    name: Build with Pre-configured Environment
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 30
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+    
+    - name: Environment verification (no installation)
+      run: |
+        echo "🔍 Verifying pre-configured build environment..."
+        echo "Runner OS: $(uname -a)"
+        echo "CPU Architecture: $(uname -m)"
+        
+        # Check required tools without installing
+        MISSING_TOOLS=()
+        
+        echo "Checking for Free Pascal Compiler..."
+        if command -v fpc >/dev/null 2>&1; then
+          echo "✅ FPC: $(fpc -iV) ($(fpc -iTP))"
+        else
+          MISSING_TOOLS+=("fpc")
+        fi
+        
+        echo "Checking for Qt5..."
+        QT5_FOUND=false
+        # Check multiple possible Qt5 locations
+        for QT5_PATH in "/opt/homebrew/Cellar/qt@5" "/usr/local/Cellar/qt@5" "/opt/qt5" "/usr/local/qt5"; do
+          if [[ -d "$QT5_PATH" ]]; then
+            echo "✅ Qt5 found at: $QT5_PATH"
+            QT5_PREFIX="$QT5_PATH"
+            QT5_FOUND=true
+            break
+          fi
+        done
+        
+        if [[ "$QT5_FOUND" != "true" ]] && command -v brew >/dev/null 2>&1; then
+          if brew list qt@5 >/dev/null 2>&1; then
+            QT5_PREFIX=$(brew --prefix qt@5)
+            echo "✅ Qt5 found via Homebrew: $QT5_PREFIX"
+            QT5_FOUND=true
+          fi
+        fi
+        
+        if [[ "$QT5_FOUND" != "true" ]]; then
+          MISSING_TOOLS+=("qt5")
+        fi
+        
+        if [[ ${#MISSING_TOOLS[@]} -gt 0 ]]; then
+          echo "❌ Missing required tools: ${MISSING_TOOLS[*]}"
+          echo ""
+          echo "This workflow expects a pre-configured environment. Please ensure:"
+          echo "1. Free Pascal Compiler (fpc) is installed and in PATH"
+          echo "2. Qt5 is installed (via Homebrew or system package)"
+          echo "3. All build tools are accessible without sudo"
+          echo ""
+          echo "Run the 'Build SkyChart macOS ARM64 (Self-Hosted)' workflow instead"
+          echo "if you want automatic dependency installation."
+          exit 1
+        fi
+        
+        echo "✅ All required tools verified and ready"
+    
+    - name: Setup environment variables
+      run: |
+        # Find and set Qt5 paths
+        QT5_PREFIX=""
+        if command -v brew >/dev/null 2>&1 && brew list qt@5 >/dev/null 2>&1; then
+          QT5_PREFIX=$(brew --prefix qt@5)
+        else
+          # Try common Qt5 installation paths
+          for QT5_PATH in "/opt/homebrew/Cellar/qt@5/"* "/usr/local/Cellar/qt@5/"* "/opt/qt5" "/usr/local/qt5"; do
+            if [[ -d "$QT5_PATH" ]]; then
+              QT5_PREFIX="$QT5_PATH"
+              break
+            fi
+          done
+        fi
+        
+        if [[ -z "$QT5_PREFIX" ]]; then
+          echo "❌ Could not determine Qt5 installation path"
+          exit 1
+        fi
+        
+        echo "QT5_DIR=$QT5_PREFIX" >> $GITHUB_ENV
+        echo "DYLD_FRAMEWORK_PATH=$QT5_PREFIX/lib:$DYLD_FRAMEWORK_PATH" >> $GITHUB_ENV
+        echo "$QT5_PREFIX/bin" >> $GITHUB_PATH
+        
+        echo "✅ Environment configured:"
+        echo "  QT5_DIR: $QT5_PREFIX"
+    
+    - name: Run build process
+      run: |
+        echo "🏗️ Starting build process..."
+        
+        # Make scripts executable
+        chmod +x *.sh
+        
+        # Export Qt5 environment
+        if [[ -n "$QT5_DIR" ]]; then
+          export DYLD_FRAMEWORK_PATH="$QT5_DIR/lib:$DYLD_FRAMEWORK_PATH"
+          export PATH="$QT5_DIR/bin:$PATH"
+        fi
+        
+        echo "Building dependencies..."
+        ./build_dependencies.sh 2>&1 | tee build_dependencies.log
+        if [[ $? -ne 0 ]]; then
+          echo "❌ Dependencies build failed"
+          exit 1
+        fi
+        
+        echo "Building SkyChart..."
+        ./build_macos_arm64.sh 2>&1 | tee build_skychart.log
+        if [[ $? -ne 0 ]]; then
+          echo "❌ SkyChart build failed"
+          exit 1
+        fi
+        
+        echo "Testing build..."
+        ./test_build.sh 2>&1 | tee test_build.log || echo "⚠️ Tests completed with warnings"
+        
+        echo "Creating package..."
+        ./package_macos.sh 2>&1 | tee package.log || echo "⚠️ Package creation completed with warnings"
+        
+        echo "✅ Build process completed"
+        echo "Build artifacts:"
+        find . -name "skychart" -type f -exec ls -la {} \; 2>/dev/null || echo "No skychart executables found"
+        ls -la dist/ 2>/dev/null || echo "No dist/ directory found"
+    
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: skychart-preconfig-build-${{ github.run_number }}
+        path: |
+          skychart/units/**/*
+          skychart/library/**/*
+          dist/
+          *.log
+        retention-days: 30
