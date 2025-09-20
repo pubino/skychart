@@ -231,6 +231,7 @@ jobs:
       with:
         name: skychart-macos-arm64-signed-${{ github.run_number }}
         path: |
+          dist/*.dmg
           *.dmg
         retention-days: 90
     
