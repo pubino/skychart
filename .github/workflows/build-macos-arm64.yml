@@ -176,6 +176,40 @@ jobs:
         find . -name "skychart" -type f 2>/dev/null || true
         ls -la dist/ || true
     
+    - name: Code signing and notarization (if configured)
+      env:
+        DEVELOPER_ID_APPLICATION: ${{ secrets.DEVELOPER_ID_APPLICATION }}
+        DEVELOPER_ID_INSTALLER: ${{ secrets.DEVELOPER_ID_INSTALLER }}
+        APPLE_ID: ${{ secrets.APPLE_ID }}
+        APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
+        TEAM_ID: ${{ secrets.TEAM_ID }}
+      run: |
+        if [[ -n "$DEVELOPER_ID_APPLICATION" && -n "$APPLE_ID" && -n "$APP_PASSWORD" && -n "$TEAM_ID" ]]; then
+          echo "🔐 Code signing and notarization enabled"
+          chmod +x sign_and_notarize_macos.sh
+          
+          # Find the app bundle
+          APP_BUNDLE=$(find dist -name "*.app" -type d | head -1)
+          if [[ -n "$APP_BUNDLE" ]]; then
+            echo "📱 Found app bundle: $APP_BUNDLE"
+            ./sign_and_notarize_macos.sh "$APP_BUNDLE" 2>&1 | tee signing.log
+            
+            # List signed artifacts
+            echo "📦 Signed artifacts:"
+            ls -la *.dmg 2>/dev/null || echo "No DMG files created"
+          else
+            echo "⚠️  No app bundle found in dist/ directory"
+          fi
+        else
+          echo "ℹ️  Code signing skipped - certificates or credentials not configured"
+          echo "📋 To enable signing, set these repository secrets:"
+          echo "   - DEVELOPER_ID_APPLICATION"
+          echo "   - APPLE_ID" 
+          echo "   - APP_PASSWORD"
+          echo "   - TEAM_ID"
+          echo "📚 See MACOS_SIGNING_SETUP.md for detailed setup instructions"
+        fi
+    
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       if: always()
@@ -185,5 +219,15 @@ jobs:
           skychart/units/**/*
           skychart/library/**/*
           dist/
+          *.dmg
           *.log
         retention-days: 30
+    
+    - name: Upload signed DMG (if created)
+      uses: actions/upload-artifact@v4
+      if: success()
+      with:
+        name: skychart-macos-arm64-signed-${{ github.run_number }}
+        path: |
+          *.dmg
+        retention-days: 90
